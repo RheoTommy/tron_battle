@@ -10,3 +10,4 @@ rayon = "*"
 rand = "*"
 serde_json = "*"
 serde = { version = "*", features = ["derive"] }
+itertools = "*"

@@ -1,6 +1,20 @@
+use itertools::Itertools;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::io::{stderr, BufRead, BufReader, Read};
+use std::net::{Shutdown, TcpListener, TcpStream};
+use std::time::Duration;
+use std::{
+    collections::VecDeque,
+    fmt::Display,
+    io::{stdin, stdout, Write},
+    thread,
+};
+
+use rayon::prelude::*;
+use Operation::*;
+use Piece::*;
 
 fn main() {
     let mut v = vec![-1; 100];
@@ -32,23 +46,29 @@ fn main() {
 
 fn handler(mut stream: TcpStream) -> Result<(), String> {
     println!("Accessed!");
-    stream
-        .set_read_timeout(Some(Duration::from_millis(500)))
-        .map_err(|e| e.to_string())?;
+
     let mut buf = [0u8; 4096];
-    stream.read(&mut buf).map_err(|e| e.to_string())?;
-    let s = String::from_utf8(buf.to_vec().into_iter().take_while(|k| *k != 0).collect())
-        .map_err(|e| e.to_string())?;
-    let s = s.trim().lines().nth(5).unwrap().trim();
-    let req: Request = serde_json::from_str(&s).unwrap();
+    stream
+        .read(&mut buf)
+        .map_err(|e| e.to_string() + " (while reading)")?;
+
+    let s = String::from_utf8(buf.iter().copied().take_while(|k| *k != 0).collect())
+        .map_err(|e| e.to_string() + " (while encoding)")?;
+
+    let s = s.lines().skip_while(|&si| !si.starts_with('{')).join("");
+    let req: Request =
+        serde_json::from_str(s.trim()).map_err(|e| e.to_string() + " (while parsing)")?;
 
     let state = Board::from_request(req);
     let op = state.min_max(10);
-    let res = serde_json::to_string(&op)
-        .map_err(|e| e.to_string())
-        .unwrap();
-    stream.write(res.as_bytes()).map_err(|e| e.to_string())?;
-    stream.flush().map_err(|e| e.to_string())
+    let res = serde_json::to_string(&op).map_err(|e| e.to_string() + " (while serializing)")?;
+    let res = format!("HTTP/1.1 200 OK\r\n\r\n{}", res);
+    stream
+        .write(res.as_bytes())
+        .map_err(|e| e.to_string() + " (while writing)")?;
+    stream
+        .flush()
+        .map_err(|e| e.to_string() + " (while flushing)")
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -119,20 +139,6 @@ fn decide_by_input() -> Operation {
         }
     }
 }
-
-use std::io::{stderr, BufRead, BufReader, Read};
-use std::net::{TcpListener, TcpStream};
-use std::time::Duration;
-use std::{
-    collections::VecDeque,
-    fmt::Display,
-    io::{stdin, stdout, Write},
-    thread,
-};
-
-use rayon::prelude::*;
-use Operation::*;
-use Piece::*;
 
 const INF: usize = 1001001001001001001;
 
