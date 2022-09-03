@@ -7,3 +7,6 @@ edition = "2021"
 
 [dependencies]
 rayon = "*"
+rand = "*"
+serde_json = "*"
+serde = { version = "*", features = ["derive"] }
